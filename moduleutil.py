@@ -71,25 +71,10 @@ def install(module: str, options: str = None):
     except Exception as e:
         loggin.error(e)
 
-    # Install Python package manager.
-    if not is_installed('pip'):
-        url = 'https://bootstrap.pypa.io/get-pip.py'
-        filepath = '{}/get-pip.py'.format(os.getcwd())
-        try:
-            requests = importlib.import_module('requests')
-            response = requests.get(url)
-            with open(filepath, 'w') as f:
-                f.write(response.text)
-            subprocess.call([executable, filepath])
-        except Exception as e:
-            logging.error(e)
-        finally:
-            if os.path.isfile(filepath):
-                os.remove(filepath)
-
     # Install given module.
     if not is_installed(module):
         try:
+            subprocess.call([executable, '-m', 'ensurepip'])
             if options is None or options.strip() == '':
                 subprocess.call([executable, '-m', 'pip', 'install', module])
             else:
