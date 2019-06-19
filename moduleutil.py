@@ -66,13 +66,20 @@ def install(module: str, options: str = None):
         True if installation succeeded; False otherwise
     """
     # Determine the path to Blender's Python interpreter.
+    executable = None
     try:
-        executable = glob.glob('{}/bin/python*'.format(sys.exec_prefix)).pop()
+        for path in glob.glob('{}/bin/python*'.format(sys.exec_prefix)):
+            logging.debug(path)
+            if os.access(path, os.X_OK) and not path.lower().endswith('dll'):
+                executable = path
+                break
     except Exception as e:
-        loggin.error(e)
+        logging.error(e)
+    if executable is None:
+        logging.error('Unable to locate Blender\'s Python executable')
 
     # Install given module.
-    if not is_installed(module):
+    if not is_installed(module) and executable is not None:
         try:
             subprocess.call([executable, '-m', 'ensurepip'])
             if options is None or options.strip() == '':
