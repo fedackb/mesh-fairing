@@ -394,8 +394,8 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
                     if mask_layer is not None:
                         affected_verts = [
                             v for v in bm.verts
-                            if ((self._invert_mask and v[mask_layer] > 0) or
-                                (not self._invert_mask and v[mask_layer] < 1))
+                            if ((self._invert_mask and v[mask_layer] >= 0.5) or
+                                (not self._invert_mask and v[mask_layer] <= 0.5))
                         ]
 
                 # Cancel this thread if there is no work to be done, which
