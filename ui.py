@@ -56,6 +56,7 @@ def draw_numpy_ui(context: bpy.types.Context, layout: bpy.types.UILayout):
     op = row.operator(operators.SCRIPT_OT_install_module.bl_idname,
                       text = 'Install NumPy')
     op.name = 'numpy'
+    op.reload_scripts = True
 
 
 def draw_scipy_ui(context: bpy.types.Context, layout: bpy.types.UILayout):
@@ -76,4 +77,5 @@ def draw_scipy_ui(context: bpy.types.Context, layout: bpy.types.UILayout):
                       text = 'Install SciPy')
     op.name = 'scipy'
     op.options = '--no-deps'
+    op.reload_scripts = True
 

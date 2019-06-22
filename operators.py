@@ -461,7 +461,8 @@ class SCRIPT_OT_install_module(bpy.types.Operator):
         if len(self.name) > 0 and moduleutil.install(self.name, self.options):
             self.report({'INFO'},
                         'Installed Python module: {}'.format(self.name))
-            bpy.ops.script.reload()
+            if self.reload_scripts:
+                bpy.ops.script.reload()
         else:
             self.report({'ERROR'},
                         'Unable to install Python module: {}'.format(self.name))
