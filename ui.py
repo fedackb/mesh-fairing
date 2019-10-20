@@ -28,6 +28,7 @@ def display_popup(message: str, title: str = '', icon: str = ''):
 
 def draw_vertex_menu(menu: bpy.types.Menu, context: bpy.types.Context):
     layout = menu.layout
+    layout.operator_context = 'INVOKE_DEFAULT'
     layout.separator()
     layout.operator(operators.MESH_OT_fair_vertices.bl_idname,
                     text = 'Fair Vertices')
