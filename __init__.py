@@ -22,8 +22,8 @@ bl_info = {
     'location': (
         'Sculpt mode: Sculpt menu, Edit mode: Vertex menu'
     ),
-    'version' : (1, 0, 1),
-    'blender' : (2, 80, 0),
+    'version' : (1, 0, 2),
+    'blender' : (2, 81, 0),
     'category' : 'Mesh'
 }
 
@@ -44,6 +44,7 @@ classes = (operators.MESH_OT_fair_vertices,
            operators.MESH_OT_fair_vertices_internal,
            operators.SCULPT_OT_fair_vertices,
            operators.SCULPT_OT_fair_vertices_internal,
+           operators.SCULPT_OT_push_undo,
            operators.SCRIPT_OT_install_module,
            preferences.MeshFairingPreferences)
 
