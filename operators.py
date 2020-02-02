@@ -83,6 +83,18 @@ class MESH_OT_fair_vertices_internal(bpy.types.Operator):
                 context.space_data.type == 'VIEW_3D')
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
+
+        # Enter modal state of operation.
+        wm = context.window_manager
+        wm.modal_handler_add(self)
+        self._modal_handler = self.modal_start
+        self._timer = wm.event_timer_add(0.1, window = context.window)
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context: bpy.types.Context, event: bpy.types.Event):
+        return self._modal_handler(context, event)
+
+    def modal_start(self, context: bpy.types.Context, event: bpy.types.Event):
         mesh = context.edit_object.data
 
         # Perform mesh fairing in a separate, cancellable thread.
@@ -90,13 +102,10 @@ class MESH_OT_fair_vertices_internal(bpy.types.Operator):
             mesh, types.Continuity[self.continuity], self.triangulate)
         self._worker.start()
 
-        # Enter modal state of operation.
-        wm = context.window_manager
-        wm.modal_handler_add(self)
-        self._timer = wm.event_timer_add(0.1, window = context.window)
+        self._modal_handler = self.modal_monitor
         return {'RUNNING_MODAL'}
 
-    def modal(self, context: bpy.types.Context, event: bpy.types.Event):
+    def modal_monitor(self, context: bpy.types.Context, event: bpy.types.Event):
         if self._worker.is_alive() and not self._worker.is_cancelled():
 
             # Display the status of mesh fairing.
@@ -108,12 +117,15 @@ class MESH_OT_fair_vertices_internal(bpy.types.Operator):
             # Cancel the mesh fairing thread.
             if event.type == 'ESC' and event.value == 'PRESS':
                 self._worker.cancel()
-
-            return {'RUNNING_MODAL'}
         else:
-            context.area.header_text_set(text = None)
-            context.window_manager.event_timer_remove(self._timer)
-            return {'FINISHED'}
+            self._modal_handler = self.modal_finish
+
+        return {'RUNNING_MODAL'}
+
+    def modal_finish(self, context: bpy.types.Context, event: bpy.types.Event):
+        context.area.header_text_set(text = None)
+        context.window_manager.event_timer_remove(self._timer)
+        return {'CANCELLED'} if self._worker.is_cancelled() else {'FINISHED'}
 
     class WorkerThread(types.CancellableThread):
         """
@@ -213,7 +225,7 @@ class SCULPT_OT_fair_vertices(bpy.types.Operator):
     bl_description = (
         'Displaces masked/unmasked vertices to produce a smooth-as-possible ' +
         'mesh patch with respect to the specified continuity constraint')
-    bl_options = {'REGISTER', 'MACRO'}
+    bl_options = {'REGISTER'}
 
     invert_mask: bpy.props.BoolProperty(
         name = 'Invert Mask',
@@ -268,9 +280,6 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
                 context.space_data.type == 'VIEW_3D')
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
-        tool_settings = context.tool_settings
-        sculpt_object = context.sculpt_object
-        mesh = sculpt_object.data
 
         # Disallow mesh fairing if dynamic topology is enabled.
         if context.sculpt_object.use_dynamic_topology_sculpting:
@@ -280,66 +289,53 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
                 icon = 'ERROR')
             return {'CANCELLED'}
 
-        # Temporarily change the sculpt tool to one that displaces geometry.
-        tool_name = context.workspace.tools.from_space_view3d_mode(context.mode).idname
-        bpy.ops.wm.tool_set_by_id(name="builtin_brush.Draw")
+        bpy.ops.sculpt.push_undo()
 
-        # Temporarily change the sculpt tool settings to effect all vertices.
-        use_unified_size = tool_settings.unified_paint_settings.use_unified_size
-        tool_settings.unified_paint_settings.use_unified_size = False
-        brush_size = tool_settings.sculpt.brush.size
-        tool_settings.sculpt.brush.size = 0x7fffffff
+        # Enter modal state of operation.
+        wm = context.window_manager
+        wm.modal_handler_add(self)
+        self._modal_handler = self.modal_start
+        self._timer = wm.event_timer_add(0.1, window = context.window)
+        return {'RUNNING_MODAL'}
 
-        # Apply a stroke that has no effect other than pushing an undo step.
-        stroke = [{
-            "name": "Null Stroke",
-            "location": (0, 0, 0),
-            "mouse" : (0, 0),
-            "pressure": 0,
-            "size": 0,
-            "pen_flip" : False,
-            "time": 0,
-            "is_start": True
-        }]
-        bpy.ops.sculpt.brush_stroke(stroke = stroke)
+    def modal(self, context: bpy.types.Context, event: bpy.types.Event):
+        return self._modal_handler(context, event)
 
-        # Restore the initial sculpt tool and settings.
-        bpy.ops.wm.tool_set_by_id(name=tool_name)
-        tool_settings.unified_paint_settings.use_unified_size = use_unified_size
-        tool_settings.sculpt.brush.size = brush_size
+    def modal_start(self, context: bpy.types.Context, event: bpy.types.Event):
+        sculpt_object = context.sculpt_object
 
         # Perform mesh fairing in a separate, cancellable thread.
         self._worker = SCULPT_OT_fair_vertices_internal.WorkerThread(
-            mesh,
+            sculpt_object.data,
             types.Continuity[self.continuity],
             self.invert_mask,
             sculpt_object.active_shape_key_index)
         self._worker.start()
 
-        # Enter modal state of operation.
-        wm = context.window_manager
-        wm.modal_handler_add(self)
-        self._timer = wm.event_timer_add(0.1, window = context.window)
+        self._modal_handler = self.modal_monitor
         return {'RUNNING_MODAL'}
 
-    def modal(self, context: bpy.types.Context, event: bpy.types.Event):
+    def modal_monitor(self, context: bpy.types.Context, event: bpy.types.Event):
         if self._worker.is_alive() and not self._worker.is_cancelled():
 
             # Display the status of mesh fairing.
             ellipsis = '.' * (int(self._timer.time_duration * 4) % 4)
             status = self._worker.get_status()
             context.area.header_text_set(
-                    text = '{}{:<3} ESC: Cancel'.format(status, ellipsis))
+                text = '{}{:<3} ESC: Cancel'.format(status, ellipsis))
 
             # Cancel the mesh fairing thread.
             if event.type == 'ESC' and event.value == 'PRESS':
                 self._worker.cancel()
-
-            return {'RUNNING_MODAL'}
         else:
-            context.area.header_text_set(text = None)
-            context.window_manager.event_timer_remove(self._timer)
-            return {'CANCELLED'} if self._worker.is_cancelled() else {'FINISHED'}
+            self._modal_handler = self.modal_finish
+
+        return {'RUNNING_MODAL'}
+
+    def modal_finish(self, context: bpy.types.Context, event: bpy.types.Event):
+        context.area.header_text_set(text = None)
+        context.window_manager.event_timer_remove(self._timer)
+        return {'CANCELLED'} if self._worker.is_cancelled() else {'FINISHED'}
 
     class WorkerThread(types.CancellableThread):
         """
@@ -435,6 +431,55 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
                     if bm.is_valid:
                         bm.to_mesh(self._mesh)
                         self._mesh.update()
+
+
+class SCULPT_OT_push_undo(bpy.types.Operator):
+    bl_idname = 'sculpt.push_undo'
+    bl_label = 'Push Undo'
+    bl_description = 'Pushes an undo step in Sculpt mode'
+    bl_options = {'INTERNAL', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        sculpt_object = context.sculpt_object
+        return (sculpt_object and
+                sculpt_object.type == 'MESH' and
+                sculpt_object.mode == 'SCULPT' and
+                len(sculpt_object.data.vertices) > 0 and
+                context.space_data.type == 'VIEW_3D')
+
+    def execute(self, context: bpy.types.Context):
+        tool_settings = context.tool_settings
+
+        # Temporarily change the sculpt tool to one that displaces geometry.
+        tool_name = context.workspace.tools.from_space_view3d_mode(context.mode).idname
+        bpy.ops.wm.tool_set_by_id(name="builtin_brush.Draw")
+
+        # Temporarily change the sculpt tool settings to effect all vertices.
+        use_unified_size = tool_settings.unified_paint_settings.use_unified_size
+        tool_settings.unified_paint_settings.use_unified_size = False
+        brush_size = tool_settings.sculpt.brush.size
+        tool_settings.sculpt.brush.size = 0x7fffffff
+
+        # Apply a stroke that has no effect other than pushing an undo step.
+        stroke = [{
+            "name": "Null Stroke",
+            "location": (0, 0, 0),
+            "mouse" : (0, 0),
+            "pressure": 0,
+            "size": 0,
+            "pen_flip" : False,
+            "time": 0,
+            "is_start": True
+        }]
+        bpy.ops.sculpt.brush_stroke(stroke = stroke)
+
+        # Restore the initial sculpt tool and settings.
+        bpy.ops.wm.tool_set_by_id(name=tool_name)
+        tool_settings.unified_paint_settings.use_unified_size = use_unified_size
+        tool_settings.sculpt.brush.size = brush_size
+
+        return {'FINISHED'}
 
 
 class SCRIPT_OT_install_module(bpy.types.Operator):
