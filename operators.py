@@ -18,6 +18,7 @@
 import bmesh
 import bpy
 import logging
+import time
 from . import geometry
 from . import moduleutil
 from . import types
@@ -146,8 +147,8 @@ class MESH_OT_fair_vertices_internal(bpy.types.Operator):
 
             Parameters:
                 mesh (bpy.types.Mesh):         Mesh on which to operate
-                triangulate (bool):            Flag controlling mesh triangulation
                 continuity (types.Continuity): Continuity constraint for fairing
+                triangulate (bool):            Flag controlling mesh triangulation
             """
             super().__init__()
             self._mesh = mesh
@@ -227,13 +228,13 @@ class SCULPT_OT_fair_vertices(bpy.types.Operator):
         'mesh patch with respect to the specified continuity constraint')
     bl_options = {'REGISTER'}
 
+    continuity: types.Continuity.create_property()
     invert_mask: bpy.props.BoolProperty(
         name = 'Invert Mask',
         description = (
             'If this option is enabled, mesh fairing is applied to masked ' +
             'vertices; otherwise, only unmasked vertices are affected.'),
         default = True)
-    continuity: types.Continuity.create_property()
 
     @classmethod
     def poll(cls, context: bpy.types.Context):
@@ -244,8 +245,8 @@ class SCULPT_OT_fair_vertices(bpy.types.Operator):
 
     def execute(self, context):
         bpy.ops.sculpt.fair_vertices_internal('INVOKE_DEFAULT', True,
-                                              invert_mask = self.invert_mask,
-                                              continuity = self.continuity)
+                                              continuity = self.continuity,
+                                              invert_mask = self.invert_mask)
         return {'FINISHED'}
 
     def draw(self, context: bpy.types.Context):
@@ -262,13 +263,13 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
         'mesh patch with respect to the specified continuity constraint')
     bl_options = {'INTERNAL', 'UNDO'}
 
+    continuity: types.Continuity.create_property()
     invert_mask: bpy.props.BoolProperty(
         name = 'Invert Mask',
         description = (
             'If this option is enabled, mesh fairing is applied to masked ' +
             'vertices; otherwise, only unmasked vertices are affected.'),
         default = True)
-    continuity: types.Continuity.create_property()
 
     @classmethod
     def poll(cls, context):
@@ -306,10 +307,9 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
 
         # Perform mesh fairing in a separate, cancellable thread.
         self._worker = SCULPT_OT_fair_vertices_internal.WorkerThread(
-            sculpt_object.data,
+            sculpt_object,
             types.Continuity[self.continuity],
-            self.invert_mask,
-            sculpt_object.active_shape_key_index)
+            self.invert_mask)
         self._worker.start()
 
         self._modal_handler = self.modal_monitor
@@ -342,33 +342,27 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
         Inner worker class for performing mesh fairing in a separate thread
 
         Attributes:
-            _mesh (bpy.types.Mesh):         Mesh on which to operate
-            _invert_mask (bool):            Flag controlling mask inversion
-            _continuity (types.Continuity): Continuity constraint for fairing
-            _shape_key_index (int):         Index of the shape key to which
-                                            mesh fairing is applied
+            _sculpt_object (bpy.types.Object): Object on which to operate
+            _continuity (types.Continuity):    Continuity constraint for fairing
+            _invert_mask (bool):               Flag controlling mask inversion
         """
 
         def __init__(self,
-                     mesh: bpy.types.Mesh,
+                     sculpt_object: bpy.types.Object,
                      continuity: types.Continuity,
-                     invert_mask: bool,
-                     shape_key_index: int):
+                     invert_mask: bool):
             """
             Initializes this worker thread
 
             Parameters:
-                mesh (bpy.types.Mesh):         Mesh on which to operate
-                continuity (types.Continuity): Continuity constraint for fairing
-                invert_mask (bool):            Flag controlling mask inversion
-                shape_key_index (int):         Index of the shape key to which
-                                               mesh fairing is applied
+                sculpt_object (bpy.types.Object): Object on which to operate
+                continuity (types.Continuity):    Continuity constraint for fairing
+                invert_mask (bool):               Flag controlling mask inversion
             """
             super().__init__()
-            self._mesh = mesh
+            self._sculpt_object = sculpt_object
             self._continuity = continuity
             self._invert_mask = invert_mask
-            self._shape_key_index = shape_key_index
 
         def run(self):
             """
@@ -379,8 +373,8 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
             # Initialize BMesh.
             self.set_status('Initializing BMesh')
             with types.BMeshGuard() as bm:
-                bm.from_mesh(self._mesh, use_shape_key = True,
-                             shape_key_index = self._shape_key_index)
+                bm.from_mesh(self._sculpt_object.data, use_shape_key = True,
+                             shape_key_index = self._sculpt_object.active_shape_key_index)
                 mask_layer = bm.verts.layers.paint_mask.active
 
                 # Determine which vertices are affected.
@@ -398,6 +392,20 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
                 # effectively avoids an undo event for a null operation.
                 if not self.is_cancelled() and len(affected_verts) == 0:
                     self.cancel()
+
+                # Triangulate region to produce higher quality results.
+                if not self.is_cancelled():
+                    self.set_status('Temporarily triangulating involved faces')
+
+                    # Determine which faces are involved, accounting for continuity.
+                    involved_faces = {f for v in affected_verts for f in v.link_faces}
+                    involved_faces.update(
+                        geometry.expand_faces(
+                            geometry.get_boundary_faces(involved_faces),
+                            self._continuity.value - 1))
+
+                    # Triangulate involved faces.
+                    bmesh.ops.triangulate(bm, faces = list(involved_faces))
 
                 # Pre-fair affected vertices for consistent results.
                 if not self.is_cancelled():
@@ -428,9 +436,9 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
                 # Update the mesh.
                 if not self.is_cancelled():
                     self.set_status('Updating the mesh')
-                    if bm.is_valid:
-                        bm.to_mesh(self._mesh)
-                        self._mesh.update()
+                    vertices = self._sculpt_object.data.vertices
+                    for v in affected_verts:
+                        vertices[v.index].co = v.co
 
 
 class SCULPT_OT_push_undo(bpy.types.Operator):

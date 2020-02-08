@@ -22,7 +22,7 @@ bl_info = {
     'location': (
         'Sculpt mode: Sculpt menu, Edit mode: Vertex menu'
     ),
-    'version' : (1, 0, 2),
+    'version' : (1, 0, 3),
     'blender' : (2, 81, 0),
     'category' : 'Mesh'
 }
