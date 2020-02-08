@@ -18,7 +18,6 @@
 import bmesh
 import bpy
 import logging
-import time
 from . import geometry
 from . import moduleutil
 from . import types
