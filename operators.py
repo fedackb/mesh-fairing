@@ -438,6 +438,7 @@ class SCULPT_OT_fair_vertices_internal(bpy.types.Operator):
                     vertices = self._sculpt_object.data.vertices
                     for v in affected_verts:
                         vertices[v.index].co = v.co
+                    self._sculpt_object.data.update()
 
 
 class SCULPT_OT_push_undo(bpy.types.Operator):
