@@ -473,12 +473,15 @@ class SCULPT_OT_push_undo(bpy.types.Operator):
         stroke = [{
             "name": "Null Stroke",
             "location": (0, 0, 0),
-            "mouse" : (0, 0),
+            "mouse": (0, 0),
+            "mouse_event" : (0, 0),
             "pressure": 0,
             "size": 0,
             "pen_flip" : False,
             "time": 0,
-            "is_start": True
+            "is_start": True,
+            "x_tilt": 0,
+            "y_tilt": 0
         }]
         bpy.ops.sculpt.brush_stroke(stroke = stroke)
 
