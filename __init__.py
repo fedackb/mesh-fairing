@@ -22,8 +22,8 @@ bl_info = {
     'location': (
         'Sculpt mode: Sculpt menu, Edit mode: Vertex menu'
     ),
-    'version' : (1, 0, 4),
-    'blender' : (2, 90, 0),
+    'version' : (1, 1, 0),
+    'blender' : (4, 5, 0),
     'category' : 'Mesh'
 }
 
@@ -35,10 +35,10 @@ if 'bpy' not in locals():
     from . import preferences
     from . import ui
 else:
-    import imp
-    imp.reload(operators)
-    imp.reload(preferences)
-    imp.reload(ui)
+    import importlib
+    importlib.reload(operators)
+    importlib.reload(preferences)
+    importlib.reload(ui)
 
 classes = (operators.MESH_OT_fair_vertices,
            operators.MESH_OT_fair_vertices_internal,
@@ -50,6 +50,9 @@ classes = (operators.MESH_OT_fair_vertices,
 
 
 def register():
+    # Verify Blender version
+    if bpy.app.version < (4, 5, 0):
+        raise Exception("Mesh Fairing 1.1+ requires Blender 4.5 or higher")
 
     # Configure the logging service.
     logging_format = (

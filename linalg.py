@@ -109,6 +109,7 @@ class SciPySolver(Solver):
 
     Attributes:
         scipy (importlib.type.ModuleType): SciPy library
+        numpy (importlib.type.ModuleType): NumPy library
     """
 
     def __init__(self, *args, **kwargs):
@@ -117,6 +118,7 @@ class SciPySolver(Solver):
         """
         super().__init__(*args, **kwargs)
         self.scipy = importlib.import_module('scipy')
+        self.numpy = importlib.import_module('numpy')
         importlib.import_module('scipy.sparse.linalg')
 
     def solve(self, A: Dict[Tuple[int], float], b: List[List[float]]):
@@ -133,20 +135,19 @@ class SciPySolver(Solver):
         x = None
         n = len(b)
 
-        # Attempt to solve the linear system with SciPy libary.
+        # Attempt to solve the linear system with SciPy library.
         try:
-            A_scipy = self.scipy.sparse.dok_matrix((n, n), dtype = 'd')
-            A_scipy._update(A)
+            A_scipy = self.scipy.sparse.dok_matrix((n, n), dtype='d')
+            for key, val in A.items():
+                A_scipy[key] = val
             A_scipy = A_scipy.tocsc()
-            b = self.scipy.array(b, dtype = 'd')
-            factor = self.scipy.sparse.linalg.splu(
-                A_scipy, diag_pivot_thresh = 0.00001)
+            b = self.numpy.array(b, dtype='d')
+            factor = self.scipy.sparse.linalg.splu(A_scipy, diag_pivot_thresh=0.00001)
             x = factor.solve(b)
         except Exception as e:
             logging.warn(e)
 
         return x
-
 
 def init():
     """
