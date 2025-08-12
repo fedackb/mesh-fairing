@@ -216,7 +216,7 @@ class MESH_OT_fair_vertices_internal(bpy.types.Operator):
             # Update the mesh.
             self.set_status('Updating the mesh')
             bm.normal_update()
-            bmesh.update_edit_mesh(self._mesh)
+            bmesh.update_edit_mesh(self._mesh, loop_triangles=False, destructive=False)
 
 
 class SCULPT_OT_fair_vertices(bpy.types.Operator):
